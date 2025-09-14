@@ -25,8 +25,9 @@ class CoffeeDelivery(models.Model):
         ('double_short', 'Double Short'),
         ('double_medium', 'Double Medium'),
         ('double_long', 'Double Long'),
+        ('purge', 'Purge Cycle'),
     ]
-    
+
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('in_progress', 'In Progress'),
@@ -34,10 +35,17 @@ class CoffeeDelivery(models.Model):
         ('failed', 'Failed'),
         ('stopped', 'Stopped'),
     ]
-    
+
+    TRIGGER_TYPES = [
+        ('api', 'API/Web Interface'),
+        ('manual', 'Physical Button Press'),
+        ('automatic', 'Automatic (Purge/System)'),
+    ]
+
     coffee_type = models.CharField(max_length=20, choices=COFFEE_TYPES)
     group_number = models.IntegerField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    trigger_type = models.CharField(max_length=20, choices=TRIGGER_TYPES, default='api')
     started_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(blank=True, null=True)
     error_message = models.TextField(blank=True)
@@ -46,7 +54,8 @@ class CoffeeDelivery(models.Model):
         ordering = ['-started_at']
     
     def __str__(self):
-        return f"{self.get_coffee_type_display()} - Group {self.group_number} ({self.status})"
+        trigger_info = f" [{self.get_trigger_type_display()}]" if self.trigger_type != 'api' else ""
+        return f"{self.get_coffee_type_display()} - Group {self.group_number} ({self.status}){trigger_info}"
 
 class MaintenanceLog(models.Model):
     """Model to log maintenance activities"""
@@ -57,6 +66,7 @@ class MaintenanceLog(models.Model):
         ('connection_issue', 'Connection Issue'),
         ('manual_stop', 'Manual Stop'),
         ('health_check', 'Health Check'),
+        ('manual_delivery', 'Manual Delivery'),
     ]
     
     log_type = models.CharField(max_length=20, choices=LOG_TYPES)

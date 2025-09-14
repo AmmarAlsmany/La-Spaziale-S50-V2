@@ -476,9 +476,11 @@ def delivery_history(request):
                 'coffee_type': delivery.get_coffee_type_display(),
                 'group_number': delivery.group_number,
                 'status': delivery.get_status_display(),
+                'trigger_type': delivery.get_trigger_type_display(),
                 'started_at': delivery.started_at.isoformat(),
                 'completed_at': delivery.completed_at.isoformat() if delivery.completed_at else None,
-                'error_message': delivery.error_message
+                'error_message': delivery.error_message,
+                'is_manual': delivery.trigger_type == 'manual'
             })
         
         return Response({'deliveries': data})
@@ -541,6 +543,117 @@ def maintenance_logs(request):
     except Exception as e:
         logger.error(f"Error getting maintenance logs: {e}")
         return Response(
-            {'error': str(e)}, 
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+# Button Monitoring API Endpoints
+
+@api_view(['POST'])
+def start_button_monitoring(request):
+    """Start button monitoring service"""
+    try:
+        from .tasks import start_button_monitoring_service
+
+        result = start_button_monitoring_service.delay()
+        response = result.get(timeout=10)
+
+        if response['status'] == 'started':
+            return Response({
+                'success': True,
+                'message': response['message'],
+                'note': 'Ensure the monitor_button_presses task is scheduled in Celery Beat every 2-3 seconds'
+            })
+        else:
+            return Response(
+                {'success': False, 'message': response['message']},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    except Exception as e:
+        logger.error(f"Error starting button monitoring: {e}")
+        return Response(
+            {'success': False, 'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+def stop_button_monitoring(request):
+    """Stop button monitoring service"""
+    try:
+        from .tasks import stop_button_monitoring_service
+
+        result = stop_button_monitoring_service.delay()
+        response = result.get(timeout=10)
+
+        if response['status'] == 'stopped':
+            return Response({
+                'success': True,
+                'message': response['message']
+            })
+        else:
+            return Response(
+                {'success': False, 'message': response['message']},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    except Exception as e:
+        logger.error(f"Error stopping button monitoring: {e}")
+        return Response(
+            {'success': False, 'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+def button_monitoring_status(request):
+    """Get button monitoring status"""
+    try:
+        enabled = cache.get('button_monitoring_enabled', False)
+        last_check = cache.get('last_button_monitor_check', None)
+        monitor_status = cache.get('button_monitor_status', {})
+
+        return Response({
+            'enabled': enabled,
+            'last_check': last_check,
+            'last_status': monitor_status.get('status', 'Unknown'),
+            'active_deliveries': monitor_status.get('active_deliveries', 0),
+            'recent_activities': monitor_status.get('activities', [])[-5:] if monitor_status.get('activities') else []
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting button monitoring status: {e}")
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+def manual_deliveries(request):
+    """Get only manual deliveries (physical button presses)"""
+    try:
+        limit = request.GET.get('limit', 50)
+        deliveries = CoffeeDelivery.objects.filter(trigger_type='manual')[:int(limit)]
+
+        data = []
+        for delivery in deliveries:
+            data.append({
+                'id': delivery.id,
+                'coffee_type': delivery.get_coffee_type_display(),
+                'group_number': delivery.group_number,
+                'status': delivery.get_status_display(),
+                'started_at': delivery.started_at.isoformat(),
+                'completed_at': delivery.completed_at.isoformat() if delivery.completed_at else None,
+                'error_message': delivery.error_message
+            })
+
+        return Response({
+            'manual_deliveries': data,
+            'total_count': CoffeeDelivery.objects.filter(trigger_type='manual').count()
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting manual deliveries: {e}")
+        return Response(
+            {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
